@@ -1,0 +1,242 @@
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
+
+import { getWeaviateClient } from "@/lib/server/weaviate";
+import { env } from "@/lib/server/env";
+import { fetchAllPanelsRows } from "@/lib/server/panelsCache";
+
+type Req = {
+  question: string;
+  selectedYear?: string;
+  selectedCategory?: string;
+  selectedVideoCode?: string;
+};
+
+function buildWhere(selectedCategory?: string, selectedVideoCode?: string) {
+  const operands: any[] = [];
+
+  const cat = (selectedCategory || "").trim();
+  if (cat && cat !== "All") {
+    operands.push({
+      path: ["video_category"],
+      operator: "Equal",
+      valueText: cat,
+    });
+  }
+
+  const vc = (selectedVideoCode || "").trim();
+  if (vc && vc !== "All") {
+    operands.push({
+      path: ["video_code"],
+      operator: "Equal",
+      valueText: vc,
+    });
+  }
+
+  if (operands.length === 0) return undefined;
+  if (operands.length === 1) return operands[0];
+  return { operator: "And", operands };
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = (await req.json()) as Req;
+    const question = (body.question || "").trim();
+    if (!question) {
+      return NextResponse.json({ ok: false, error: "Missing question" }, { status: 400 });
+    }
+
+    // 1) embed query
+    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+    const emb = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: question,
+    });
+    const vector = emb.data[0].embedding;
+
+    // 2) query weaviate
+    const client = await getWeaviateClient();
+    const where = buildWhere(body.selectedCategory, body.selectedVideoCode);
+
+    const topK = 10;
+    const fetchK = 30; // over-fetch, then re-rank with keyword boost
+
+    const fields = [
+      "chunk_id",
+      "video_code",
+      "video_category",
+      "doc_id",
+      "file_name",
+      "chunk_start_time",
+      "chunk_speakers",
+      "text",
+      "_additional { score }",
+    ].join("\n");
+
+    // Extract distinctive keywords (skip stopwords and subject name)
+    const stopwords = new Set(["the","and","was","were","what","did","does","how","who","why","when","where","about","that","this","with","from","have","has","had","for","are","but","not","you","all","can","her","his","its","our","they","will","been","each","make","like","than","them","then","some","into","over","such","just","also","most","very","said","say","says","reza","pahlavi","iran","iranian"]);
+    const keyTerms = question.toLowerCase()
+      .split(/\W+/)
+      .filter((w) => w.length >= 3 && !stopwords.has(w));
+    const bm25Query = keyTerms.length > 0 ? keyTerms.join(" ") : question;
+
+    // Two-pass retrieval: hybrid (semantic+keyword) + pure BM25 (keyword-only, distinctive terms)
+    let hybridQ: any = client.graphql
+      .get()
+      .withClassName(env.WEAVIATE_DOCCHUNKS_COLLECTION)
+      .withFields(fields)
+      .withHybrid({ query: question, vector, alpha: 0.5 })
+      .withLimit(fetchK);
+
+    let bm25Q: any = client.graphql
+      .get()
+      .withClassName(env.WEAVIATE_DOCCHUNKS_COLLECTION)
+      .withFields(fields)
+      .withHybrid({ query: bm25Query, vector, alpha: 0 })
+      .withLimit(fetchK);
+
+    if (where) {
+      hybridQ = hybridQ.withWhere(where);
+      bm25Q = bm25Q.withWhere(where);
+    }
+
+    const [hybridRes, bm25Res] = await Promise.all([hybridQ.do(), bm25Q.do()]);
+    const hybridRows: any[] = hybridRes?.data?.Get?.[env.WEAVIATE_DOCCHUNKS_COLLECTION] || [];
+    const bm25Rows: any[] = bm25Res?.data?.Get?.[env.WEAVIATE_DOCCHUNKS_COLLECTION] || [];
+
+    // Merge both sets, dedup by chunk key, assign scores from both lists
+    const chunkScores = new Map<string, { row: any; hybridRank: number; bm25Rank: number }>();
+    for (let i = 0; i < hybridRows.length; i++) {
+      const r = hybridRows[i];
+      const key = `${r.video_code}::${r.chunk_id}`;
+      if (!chunkScores.has(key)) {
+        chunkScores.set(key, { row: r, hybridRank: i + 1, bm25Rank: fetchK + 1 });
+      }
+    }
+    for (let i = 0; i < bm25Rows.length; i++) {
+      const r = bm25Rows[i];
+      const key = `${r.video_code}::${r.chunk_id}`;
+      const existing = chunkScores.get(key);
+      if (existing) {
+        existing.bm25Rank = i + 1;
+      } else {
+        chunkScores.set(key, { row: r, hybridRank: fetchK + 1, bm25Rank: i + 1 });
+      }
+    }
+
+    // Score: RRF + keyword presence boost / absence penalty
+    const scored = Array.from(chunkScores.values()).map((s) => {
+      const base = 1 / s.hybridRank + 2 / s.bm25Rank;
+      const textLower = (s.row.text || "").toLowerCase();
+      const matched = keyTerms.filter((t) => textLower.includes(t)).length;
+      // Boost chunks containing key terms; penalize those missing them
+      const kwFactor = keyTerms.length > 0
+        ? matched === keyTerms.length ? 1.5    // all key terms present: boost
+          : matched > 0 ? 1.0                  // some terms: neutral
+          : 0.4                                 // no key terms: demote
+        : 1.0;
+      return { row: s.row, score: base * kwFactor };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const rows = scored.slice(0, topK).map((s) => s.row);
+
+    // 3) Load video metadata
+    const videoRows = await fetchAllPanelsRows();
+    const byCode = new Map<string, any>();
+    for (const r of videoRows) {
+      byCode.set(r.video_code, r);
+    }
+
+    // 4) Group chunks by video_code
+    const grouped = new Map<string, any>();
+
+    rows.forEach((r, idx) => {
+      const video_code = String(r.video_code || "").trim();
+      if (!video_code) return;
+
+      const meta = byCode.get(video_code);
+
+      if (!grouped.has(video_code)) {
+        grouped.set(video_code, {
+          video_code,
+          title: meta?.title || "",
+          category: meta?.category || r.video_category || "",
+          speakers: meta?.speakers || "",
+          video_date: meta?.video_date || "",
+          video_url: meta?.video_url || "",
+          external_details_url: meta?.external_details_url || "",
+          year: meta?.year || "",
+          photo_url: meta?.photo_url || null,
+          summary: meta?.summary || "",
+          chunks: [] as any[],
+        });
+      }
+
+      const g = grouped.get(video_code)!;
+      g.chunks.push({
+        rank: idx + 1,
+        score: r?._additional?.score,
+        chunk_id: r.chunk_id,
+        chunk_start_time: r.chunk_start_time,
+        chunk_speakers: r.chunk_speakers,
+        text: r.text,
+        doc_id: r.doc_id,
+        file_name: r.file_name,
+        video_code: r.video_code,
+        video_category: r.video_category,
+      });
+    });
+
+    const results = Array.from(grouped.values()).sort((a, b) => {
+      const ra = a.chunks?.[0]?.rank ?? 9999;
+      const rb = b.chunks?.[0]?.rank ?? 9999;
+      return ra - rb;
+    });
+
+    // 5) RAG: Generate synthesized answer from top chunks
+    const contextChunks = rows.slice(0, 5).map((r, i) => {
+      const meta = byCode.get(String(r.video_code || "").trim());
+      const title = meta?.title || r.file_name || "Unknown";
+      const time = r.chunk_start_time || "00:00:00";
+      return `[Source ${i + 1}: "${title}" at ${time}]\n${r.text}`;
+    });
+
+    let aiAnswer = "";
+    if (contextChunks.length > 0) {
+      try {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          temperature: 0.3,
+          max_tokens: 600,
+          messages: [
+            {
+              role: "system",
+              content: `You are a research assistant specializing in Reza Pahlavi's public statements and interviews. Answer the user's question based ONLY on the provided transcript excerpts. Cite sources using [Source N] references. If the excerpts don't contain enough information, say so. Be concise and factual.`,
+            },
+            {
+              role: "user",
+              content: `Question: ${question}\n\nTranscript excerpts:\n\n${contextChunks.join("\n\n")}`,
+            },
+          ],
+        });
+        aiAnswer = completion.choices[0]?.message?.content?.trim() || "";
+      } catch (e: any) {
+        console.error("RAG answer generation failed:", e?.message);
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      topK,
+      aiAnswer,
+      results,
+      s3: {
+        base: `https://${env.S3_BUCKET}.s3.${env.S3_REGION}.amazonaws.com`,
+        audioPrefix: env.S3_AUDIO_PREFIX,
+      },
+    });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "Search error" }, { status: 500 });
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "reza-pahlavi",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev", "-p", "3002"],
+      "port": 3002,
+      "cwd": "C:\\Users\\MasoudHariri\\OneDrive - olgoo.com\\Olgoo1 - Documents\\Code\\CSPC\\React_RezaPahlavi"
+    }
+  ]
+}
