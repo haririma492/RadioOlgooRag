@@ -113,6 +113,8 @@ export default function VideoBlock({
             chunk={c}
             s3BaseUrl={s3BaseUrl}
             audioPrefix={audioPrefix}
+            videoCode={videoCode}
+            videoUrl={videoUrl}
           />
         ))}
       </div>
