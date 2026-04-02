@@ -25,7 +25,7 @@ export default function VideoBlock({
   const speakersArr = Array.isArray(meta?.speakers) ? meta.speakers : typeof meta?.speakers === "string" ? [meta.speakers] : [];
   const speakers = speakersArr.filter(Boolean).join(", ");
   const videoDate = String(meta?.video_date ?? "").trim();
-  const videoUrl = String(meta?.video_url ?? "").trim();
+  const videoUrl = String(meta?.video_url ?? p?.video_url ?? "").trim();
   const summary = String(meta?.summary ?? "").trim();
 
   const parts: string[] = [];

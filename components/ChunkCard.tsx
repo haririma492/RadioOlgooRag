@@ -44,7 +44,7 @@ export default function ChunkCard({
   if (spk !== "—") caps.push(`Speakers: ${spk}`);
 
   const startSeconds = timeToSeconds(timeStr);
-  const ytId = extractYouTubeId(videoCode, videoUrl);
+  const ytId = extractYouTubeId(videoCode || chunk.video_code, videoUrl);
 
   // Fallback to audio player for non-YouTube videos
   const fileName = chunk.file_name;
