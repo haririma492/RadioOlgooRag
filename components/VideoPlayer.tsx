@@ -56,16 +56,16 @@ export default function VideoPlayer({
 
   // 1) YouTube embed
   if (youtubeId) {
-    const src = `https://www.youtube.com/embed/${youtubeId}?start=${start}&rel=0`;
+    const src = `https://www.youtube-nocookie.com/embed/${youtubeId}?start=${start}&rel=0&enablejsapi=0`;
     return (
       <div className="mt-3 aspect-video w-full max-w-md rounded-lg overflow-hidden shadow">
         <iframe
           src={src}
           title="YouTube video"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
           allowFullScreen
+          referrerPolicy="no-referrer-when-downgrade"
           className="w-full h-full border-0"
-          loading="lazy"
         />
       </div>
     );
