@@ -139,16 +139,66 @@ export async function POST(req: Request) {
     });
 
     scored.sort((a, b) => b.score - a.score);
-    const rows = scored.slice(0, topK).map((s) => s.row);
 
-    // 3) Load video metadata
+    // 3) LLM Reranking: take top-20 candidates, ask GPT-4o-mini to score relevance
+    const rerankerCandidates = scored.slice(0, 20);
+    let rows: any[];
+
+    try {
+      const chunkList = rerankerCandidates.map((s, i) => {
+        const text = (s.row.text || "").substring(0, 400);
+        return `[${i}] ${text}`;
+      }).join("\n\n");
+
+      const rerankerResp = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0,
+        max_tokens: 200,
+        messages: [
+          {
+            role: "system",
+            content: `You are a relevance scoring engine. Given a query and numbered text chunks, return a JSON array of the indices of the most relevant chunks, ordered by relevance (most relevant first). Return ONLY a JSON array of numbers, e.g. [3,0,7,1,5]. Select up to 10 chunks.`,
+          },
+          {
+            role: "user",
+            content: `Query: ${question}\n\nChunks:\n${chunkList}`,
+          },
+        ],
+      });
+
+      const rerankerText = rerankerResp.choices[0]?.message?.content?.trim() || "";
+      // Parse the JSON array of indices
+      const indexMatch = rerankerText.match(/\[[\d,\s]+\]/);
+      if (indexMatch) {
+        const indices: number[] = JSON.parse(indexMatch[0]);
+        const reranked = indices
+          .filter((idx) => idx >= 0 && idx < rerankerCandidates.length)
+          .map((idx) => rerankerCandidates[idx].row);
+        // Fill remaining slots with un-reranked candidates if fewer than topK
+        const rerankedSet = new Set(indices);
+        for (const s of rerankerCandidates) {
+          if (reranked.length >= topK) break;
+          const origIdx = rerankerCandidates.indexOf(s);
+          if (!rerankedSet.has(origIdx)) reranked.push(s.row);
+        }
+        rows = reranked.slice(0, topK);
+      } else {
+        // Fallback if parsing fails
+        rows = rerankerCandidates.slice(0, topK).map((s) => s.row);
+      }
+    } catch (e: any) {
+      console.error("Reranker failed, using RRF ranking:", e?.message);
+      rows = rerankerCandidates.slice(0, topK).map((s) => s.row);
+    }
+
+    // 5) Load video metadata
     const videoRows = await fetchAllPanelsRows();
     const byCode = new Map<string, any>();
     for (const r of videoRows) {
       byCode.set(r.video_code, r);
     }
 
-    // 4) Group chunks by video_code
+    // 6) Group chunks by video_code
     const grouped = new Map<string, any>();
 
     rows.forEach((r, idx) => {
@@ -194,7 +244,7 @@ export async function POST(req: Request) {
       return ra - rb;
     });
 
-    // 5) RAG: Generate synthesized answer from top chunks
+    // 7) RAG: Generate synthesized answer from top chunks
     const contextChunks = rows.slice(0, 5).map((r, i) => {
       const meta = byCode.get(String(r.video_code || "").trim());
       const title = meta?.title || r.file_name || "Unknown";
