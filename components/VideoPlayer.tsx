@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
+
+// Dynamically import ReactPlayer (no SSR — it uses browser APIs)
+const ReactPlayer = dynamic(() => import("react-player") as any, {
+  ssr: false,
+}) as any;
 
 /**
  * Unified video/audio player.
- * - YouTube videos: iframe embed with ?start=
+ * - YouTube videos: ReactPlayer (plays inline, no redirect)
  * - MP4/direct URLs: HTML5 <video> with seek to startSeconds
  * - Audio-only fallback: HTML5 <audio>
  */
@@ -54,19 +60,25 @@ export default function VideoPlayer({
     return () => el.removeEventListener("loadedmetadata", seek);
   }, [start, audioUrl]);
 
-  // 1) YouTube embed
+  // 1) YouTube — ReactPlayer handles inline playback reliably
   if (youtubeId) {
-    const src = `https://www.youtube-nocookie.com/embed/${youtubeId}?start=${start}&rel=0&enablejsapi=0`;
+    const ytUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
     return (
-      <div className="mt-3 aspect-video w-full max-w-md rounded-lg overflow-hidden shadow">
-        <iframe
-          src={src}
-          title="YouTube video"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-          allowFullScreen
-          referrerPolicy="no-referrer-when-downgrade"
-          className="w-full h-full border-0"
-        />
+      <div className="mt-3 w-full max-w-md rounded-lg overflow-hidden shadow">
+        <div className="aspect-video">
+          <ReactPlayer
+            url={ytUrl}
+            controls
+            width="100%"
+            height="100%"
+            config={{
+              youtube: {
+                start,
+                rel: 0,
+              },
+            }}
+          />
+        </div>
       </div>
     );
   }

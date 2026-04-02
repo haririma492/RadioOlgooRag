@@ -13,6 +13,7 @@
     "openai": "4.80.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
+    "react-player": "^3.4.0",
     "weaviate-ts-client": "^2.2.0"
   },
   "devDependencies": {
