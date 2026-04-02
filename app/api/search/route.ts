@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     const client = await getWeaviateClient();
     const where = buildWhere(body.selectedCategory, body.selectedVideoCode);
 
-    const topK = 10;
+    const maxK = 10;  // upper bound
     const fetchK = 30; // over-fetch, then re-rank with keyword boost
 
     const fields = [
@@ -157,7 +157,7 @@ export async function POST(req: Request) {
         messages: [
           {
             role: "system",
-            content: `You are a relevance scoring engine. Given a query and numbered text chunks, return a JSON array of the indices of the most relevant chunks, ordered by relevance (most relevant first). Return ONLY a JSON array of numbers, e.g. [3,0,7,1,5]. Select up to 10 chunks.`,
+            content: `You are a relevance scoring engine. Given a query and numbered text chunks, return a JSON array of the indices of ONLY the chunks that are genuinely relevant to the query. Order by relevance (most relevant first). If only 3 chunks are relevant, return only 3 — do NOT pad with irrelevant results. Return ONLY a JSON array of numbers, e.g. [3,0,7]. Maximum 10 chunks.`,
           },
           {
             role: "user",
@@ -171,24 +171,18 @@ export async function POST(req: Request) {
       const indexMatch = rerankerText.match(/\[[\d,\s]+\]/);
       if (indexMatch) {
         const indices: number[] = JSON.parse(indexMatch[0]);
-        const reranked = indices
+        // Only keep chunks the reranker deemed relevant — no padding
+        rows = indices
           .filter((idx) => idx >= 0 && idx < rerankerCandidates.length)
+          .slice(0, maxK)
           .map((idx) => rerankerCandidates[idx].row);
-        // Fill remaining slots with un-reranked candidates if fewer than topK
-        const rerankedSet = new Set(indices);
-        for (const s of rerankerCandidates) {
-          if (reranked.length >= topK) break;
-          const origIdx = rerankerCandidates.indexOf(s);
-          if (!rerankedSet.has(origIdx)) reranked.push(s.row);
-        }
-        rows = reranked.slice(0, topK);
       } else {
         // Fallback if parsing fails
-        rows = rerankerCandidates.slice(0, topK).map((s) => s.row);
+        rows = rerankerCandidates.slice(0, maxK).map((s) => s.row);
       }
     } catch (e: any) {
       console.error("Reranker failed, using RRF ranking:", e?.message);
-      rows = rerankerCandidates.slice(0, topK).map((s) => s.row);
+      rows = rerankerCandidates.slice(0, maxK).map((s) => s.row);
     }
 
     // 5) Load video metadata
@@ -278,7 +272,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      topK,
+      topK: rows.length,
       aiAnswer,
       results,
       s3: {
