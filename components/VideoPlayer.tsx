@@ -1,17 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import dynamic from "next/dynamic";
-
-// Dynamically import ReactPlayer (no SSR — it uses browser APIs)
-const ReactPlayer = dynamic(() => import("react-player") as any, {
-  ssr: false,
-}) as any;
 
 /**
  * Unified video/audio player.
- * - YouTube videos: ReactPlayer (plays inline, no redirect)
- * - MP4/direct URLs: HTML5 <video> with seek to startSeconds
+ * - YouTube videos: simple iframe embed
+ * - MP4/direct URLs: HTML5 <video> with seek
  * - Audio-only fallback: HTML5 <audio>
  */
 export default function VideoPlayer({
@@ -30,13 +24,12 @@ export default function VideoPlayer({
 
   const start = Math.max(0, Math.floor(startSeconds));
 
-  // Seek HTML5 video to startSeconds on load
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
     const seek = () => {
       try {
-        if (Number.isFinite(start) && start > 0 && el.duration && start < el.duration) {
+        if (start > 0 && el.duration && start < el.duration) {
           el.currentTime = start;
         }
       } catch {}
@@ -45,13 +38,12 @@ export default function VideoPlayer({
     return () => el.removeEventListener("loadedmetadata", seek);
   }, [start, videoUrl]);
 
-  // Seek HTML5 audio to startSeconds on load
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
     const seek = () => {
       try {
-        if (Number.isFinite(start) && start > 0 && el.duration && start < el.duration) {
+        if (start > 0 && el.duration && start < el.duration) {
           el.currentTime = start;
         }
       } catch {}
@@ -60,45 +52,34 @@ export default function VideoPlayer({
     return () => el.removeEventListener("loadedmetadata", seek);
   }, [start, audioUrl]);
 
-  // 1) YouTube — ReactPlayer handles inline playback reliably
+  // 1) YouTube — plain iframe, most compatible approach
   if (youtubeId) {
-    const ytUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
     return (
-      <div className="mt-3 w-full max-w-md rounded-lg overflow-hidden shadow">
-        <div className="aspect-video">
-          <ReactPlayer
-            url={ytUrl}
-            controls
-            width="100%"
-            height="100%"
-            config={{
-              youtube: {
-                start,
-                rel: 0,
-              },
-            }}
+      <div className="mt-3 w-full max-w-md">
+        <div style={{ position: "relative", paddingBottom: "56.25%", height: 0 }}>
+          <iframe
+            style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: 0, borderRadius: "0.5rem" }}
+            src={`https://www.youtube.com/embed/${youtubeId}?start=${start}`}
+            title="Video"
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
           />
         </div>
       </div>
     );
   }
 
-  // 2) Direct video URL (S3 mp4, etc.)
+  // 2) Direct video URL (S3 mp4)
   if (videoUrl) {
     return (
       <div className="mt-3 w-full max-w-md rounded-lg overflow-hidden shadow">
-        <video
-          ref={videoRef}
-          controls
-          preload="none"
-          src={videoUrl}
-          className="w-full"
-        />
+        <video ref={videoRef} controls preload="none" src={videoUrl} className="w-full" />
       </div>
     );
   }
 
-  // 3) Audio-only fallback
+  // 3) Audio fallback
   if (audioUrl) {
     return (
       <div className="mt-3">
