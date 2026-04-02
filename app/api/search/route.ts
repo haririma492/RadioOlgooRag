@@ -212,7 +212,7 @@ export async function POST(req: Request) {
         messages: [
           {
             role: "system",
-            content: `You are a relevance scoring engine. Given a query and numbered text chunks, return a JSON array of the indices of ONLY the chunks that are genuinely relevant to the query. Order by relevance (most relevant first). If only 3 chunks are relevant, return only 3 — do NOT pad with irrelevant results. Return ONLY a JSON array of numbers, e.g. [3,0,7]. Maximum 10 chunks.`,
+            content: `You are a relevance ordering engine. Given a query and numbered text chunks, return a JSON array of chunk indices ordered by relevance (most relevant first). Include all chunks that have ANY connection to the query. Return ONLY a JSON array of numbers, e.g. [3,0,7,1,5]. Maximum 10 chunks.`,
           },
           {
             role: "user",
@@ -222,22 +222,81 @@ export async function POST(req: Request) {
       });
 
       const rerankerText = rerankerResp.choices[0]?.message?.content?.trim() || "";
-      // Parse the JSON array of indices
       const indexMatch = rerankerText.match(/\[[\d,\s]+\]/);
+
+      // Reranker gives us ordering; we also ensure keyword-matching chunks are never dropped
+      let rerankedRows: any[];
       if (indexMatch) {
         const indices: number[] = JSON.parse(indexMatch[0]);
-        // Only keep chunks the reranker deemed relevant — no padding
-        rows = indices
+        rerankedRows = indices
           .filter((idx) => idx >= 0 && idx < rerankerCandidates.length)
           .slice(0, maxK)
           .map((idx) => rerankerCandidates[idx].row);
+
+        // Ensure chunks with keyword hits that the reranker missed are included
+        const rerankedKeys = new Set(rerankedRows.map((r) => `${r.video_code}::${r.chunk_id}`));
+        for (const s of rerankerCandidates) {
+          if (rerankedRows.length >= maxK) break;
+          const textLower = (s.row.text || "").toLowerCase();
+          const hasKeyword = keyTerms.some((t) => {
+            if (textLower.includes(t)) return true;
+            const variants = spellingVariants[t];
+            return variants ? variants.some((v) => textLower.includes(v)) : false;
+          });
+          const key = `${s.row.video_code}::${s.row.chunk_id}`;
+          if (hasKeyword && !rerankedKeys.has(key)) {
+            rerankedRows.push(s.row);
+            rerankedKeys.add(key);
+          }
+        }
       } else {
-        // Fallback if parsing fails
-        rows = rerankerCandidates.slice(0, maxK).map((s) => s.row);
+        rerankedRows = rerankerCandidates.slice(0, maxK).map((s) => s.row);
+      }
+
+      // Smart cutoff: drop trailing chunks that have NO keyword match AND low RRF score
+      // Keep all chunks with keyword hits; only trim keyword-absent tail
+      const topScore = scored[0]?.score ?? 1;
+      const scoreThreshold = topScore * 0.25; // drop if below 25% of top score
+      rows = [];
+      for (const r of rerankedRows) {
+        const textLower = (r.text || "").toLowerCase();
+        const hasKeyword = keyTerms.length === 0 || keyTerms.some((t) => {
+          if (textLower.includes(t)) return true;
+          const variants = spellingVariants[t];
+          return variants ? variants.some((v) => textLower.includes(v)) : false;
+        });
+        if (hasKeyword) {
+          rows.push(r); // always keep keyword matches
+        } else {
+          // Check RRF score — keep if reasonably strong
+          const entry = Array.from(chunkScores.values()).find(
+            (s) => s.row.video_code === r.video_code && s.row.chunk_id === r.chunk_id
+          );
+          const base = entry ? (1 / entry.hybridRank + 2 / entry.bm25Rank) : 0;
+          if (base >= scoreThreshold) {
+            rows.push(r);
+          }
+        }
       }
     } catch (e: any) {
       console.error("Reranker failed, using RRF ranking:", e?.message);
       rows = rerankerCandidates.slice(0, maxK).map((s) => s.row);
+      // Still apply smart cutoff on fallback
+      const topScoreFb = scored[0]?.score ?? 1;
+      const threshFb = topScoreFb * 0.25;
+      rows = rows.filter((r) => {
+        const textLower = (r.text || "").toLowerCase();
+        const hasKw = keyTerms.length === 0 || keyTerms.some((t) => {
+          if (textLower.includes(t)) return true;
+          const variants = spellingVariants[t];
+          return variants ? variants.some((v) => textLower.includes(v)) : false;
+        });
+        if (hasKw) return true;
+        const entry = Array.from(chunkScores.values()).find(
+          (s) => s.row.video_code === r.video_code && s.row.chunk_id === r.chunk_id
+        );
+        return entry ? (1 / entry.hybridRank + 2 / entry.bm25Rank) >= threshFb : false;
+      });
     }
 
     // 5) Load video metadata
