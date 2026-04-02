@@ -75,10 +75,60 @@ export async function POST(req: Request) {
 
     // Extract distinctive keywords (skip stopwords and subject name)
     const stopwords = new Set(["the","and","was","were","what","did","does","how","who","why","when","where","about","that","this","with","from","have","has","had","for","are","but","not","you","all","can","her","his","its","our","they","will","been","each","make","like","than","them","then","some","into","over","such","just","also","most","very","said","say","says","reza","pahlavi","iran","iranian"]);
-    const keyTerms = question.toLowerCase()
+
+    // Transliteration / spelling variants (Farsi→English common differences)
+    const spellingVariants: Record<string, string[]> = {
+      kurdistan: ["kurdestan", "kordestan", "kordistan"],
+      kurdestan: ["kurdistan", "kordestan", "kordistan"],
+      kordestan: ["kurdistan", "kurdestan", "kordistan"],
+      khamenei: ["khamenei", "khameini", "khameneii", "khamenai"],
+      khameini: ["khamenei", "khamenai"],
+      tehran: ["teheran", "tehraan"],
+      teheran: ["tehran"],
+      isfahan: ["esfahan", "isphahan"],
+      esfahan: ["isfahan", "isphahan"],
+      baluchistan: ["balochistan", "baluchestan", "balochestan"],
+      balochistan: ["baluchistan", "baluchestan", "balochestan"],
+      azarbaijan: ["azerbaijan", "azarbayjan"],
+      azerbaijan: ["azarbaijan", "azarbayjan"],
+      khuzestan: ["khuzistan", "khouzestan"],
+      khuzistan: ["khuzestan", "khouzestan"],
+      ahmadinejad: ["ahmadinezhad", "ahmadinejat"],
+      rafsanjani: ["rafsandjani"],
+      mousavi: ["moussavi", "musavi"],
+      moussavi: ["mousavi", "musavi"],
+      rouhani: ["rohani", "rowhani", "ruhani"],
+      rohani: ["rouhani", "rowhani", "ruhani"],
+      mossadegh: ["mosaddegh", "mossadeq", "mosadeq"],
+      mosaddegh: ["mossadegh", "mossadeq", "mosadeq"],
+      hezbollah: ["hizbollah", "hezballah", "hizbullah"],
+      quran: ["koran", "quoran"],
+      koran: ["quran", "quoran"],
+      shiite: ["shia", "shiia"],
+      shia: ["shiite", "shiia"],
+      sunni: ["suni", "sunnie"],
+      ayatollah: ["ayatolla"],
+    };
+
+    const rawTerms = question.toLowerCase()
       .split(/\W+/)
       .filter((w) => w.length >= 3 && !stopwords.has(w));
-    const bm25Query = keyTerms.length > 0 ? keyTerms.join(" ") : question;
+
+    // Expand terms with spelling variants for BM25 (OR search)
+    const expandedTerms: string[] = [];
+    for (const term of rawTerms) {
+      expandedTerms.push(term);
+      if (spellingVariants[term]) {
+        for (const variant of spellingVariants[term]) {
+          if (!expandedTerms.includes(variant)) expandedTerms.push(variant);
+        }
+      }
+    }
+
+    // keyTerms = original distinctive terms (for keyword matching in scoring)
+    const keyTerms = rawTerms;
+    // bm25Query = expanded terms (catches spelling variants)
+    const bm25Query = expandedTerms.length > 0 ? expandedTerms.join(" ") : question;
 
     // Two-pass retrieval: hybrid (semantic+keyword) + pure BM25 (keyword-only, distinctive terms)
     let hybridQ: any = client.graphql
@@ -128,7 +178,12 @@ export async function POST(req: Request) {
     const scored = Array.from(chunkScores.values()).map((s) => {
       const base = 1 / s.hybridRank + 2 / s.bm25Rank;
       const textLower = (s.row.text || "").toLowerCase();
-      const matched = keyTerms.filter((t) => textLower.includes(t)).length;
+      // Check if term OR any of its spelling variants appear in the text
+      const matched = keyTerms.filter((t) => {
+        if (textLower.includes(t)) return true;
+        const variants = spellingVariants[t];
+        return variants ? variants.some((v) => textLower.includes(v)) : false;
+      }).length;
       // Boost chunks containing key terms; penalize those missing them
       const kwFactor = keyTerms.length > 0
         ? matched === keyTerms.length ? 1.5    // all key terms present: boost

@@ -1,27 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 
-// ---- Global registry: only one player at a time ----
-const activePlayers = new Set<{ pause: () => void }>();
+// ---- Global: only one media element playing at a time ----
+const activeMediaElements = new Set<HTMLMediaElement>();
 
-function registerPlayer(player: { pause: () => void }) {
-  activePlayers.add(player);
-}
-
-function unregisterPlayer(player: { pause: () => void }) {
-  activePlayers.delete(player);
-}
-
-function pauseAllExcept(current: { pause: () => void }) {
-  activePlayers.forEach((p) => {
-    if (p !== current) p.pause();
+function pauseAllMedia(except?: HTMLMediaElement) {
+  activeMediaElements.forEach((el) => {
+    if (el !== except) {
+      try { el.pause(); } catch {}
+    }
   });
 }
 
+// Global: only one YouTube iframe loaded at a time
+let activeYouTubeDestroy: (() => void) | null = null;
+
 /**
  * Unified video/audio player.
- * Only one player plays at a time across the whole page.
+ * - YouTube: click-to-load (only one iframe at a time)
+ * - MP4: HTML5 <video>
+ * - Audio: HTML5 <audio>
+ * All enforce single-player-at-a-time.
  */
 export default function VideoPlayer({
   youtubeId,
@@ -36,77 +36,33 @@ export default function VideoPlayer({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [ytActive, setYtActive] = useState(false);
 
   const start = Math.max(0, Math.floor(startSeconds));
-
-  // YouTube iframe pause via postMessage
-  const pauseYouTube = useCallback(() => {
-    try {
-      iframeRef.current?.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-        "*"
-      );
-    } catch {}
-  }, []);
-
-  // Register YouTube player
-  useEffect(() => {
-    if (!youtubeId) return;
-    const player = { pause: pauseYouTube };
-    registerPlayer(player);
-    return () => unregisterPlayer(player);
-  }, [youtubeId, pauseYouTube]);
-
-  // Listen for YouTube iframe playing (via postMessage from YT API)
-  useEffect(() => {
-    if (!youtubeId) return;
-    const handler = (e: MessageEvent) => {
-      try {
-        if (typeof e.data !== "string") return;
-        const data = JSON.parse(e.data);
-        // YT sends {"event":"onStateChange","info":1} when playing
-        if (data?.event === "onStateChange" && data?.info === 1) {
-          // This YT player started playing — pause all others
-          const me = Array.from(activePlayers).find(
-            (p) => p.pause === pauseYouTube
-          );
-          if (me) pauseAllExcept(me);
-        }
-      } catch {}
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, [youtubeId, pauseYouTube]);
 
   // HTML5 video: seek + single-player
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
+    activeMediaElements.add(el);
 
     const seek = () => {
       try {
-        if (start > 0 && el.duration && start < el.duration) {
-          el.currentTime = start;
-        }
+        if (start > 0 && el.duration && start < el.duration) el.currentTime = start;
       } catch {}
     };
-
-    const player = {
-      pause: () => {
-        try { el.pause(); } catch {}
-      },
+    const onPlay = () => {
+      // Destroy any active YouTube iframe
+      if (activeYouTubeDestroy) { activeYouTubeDestroy(); activeYouTubeDestroy = null; }
+      pauseAllMedia(el);
     };
-    registerPlayer(player);
-
-    const onPlay = () => pauseAllExcept(player);
 
     el.addEventListener("loadedmetadata", seek);
     el.addEventListener("play", onPlay);
     return () => {
       el.removeEventListener("loadedmetadata", seek);
       el.removeEventListener("play", onPlay);
-      unregisterPlayer(player);
+      activeMediaElements.delete(el);
     };
   }, [start, videoUrl]);
 
@@ -114,42 +70,77 @@ export default function VideoPlayer({
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
+    activeMediaElements.add(el);
 
     const seek = () => {
       try {
-        if (start > 0 && el.duration && start < el.duration) {
-          el.currentTime = start;
-        }
+        if (start > 0 && el.duration && start < el.duration) el.currentTime = start;
       } catch {}
     };
-
-    const player = {
-      pause: () => {
-        try { el.pause(); } catch {}
-      },
+    const onPlay = () => {
+      if (activeYouTubeDestroy) { activeYouTubeDestroy(); activeYouTubeDestroy = null; }
+      pauseAllMedia(el);
     };
-    registerPlayer(player);
-
-    const onPlay = () => pauseAllExcept(player);
 
     el.addEventListener("loadedmetadata", seek);
     el.addEventListener("play", onPlay);
     return () => {
       el.removeEventListener("loadedmetadata", seek);
       el.removeEventListener("play", onPlay);
-      unregisterPlayer(player);
+      activeMediaElements.delete(el);
     };
   }, [start, audioUrl]);
 
-  // 1) YouTube — enablejsapi=1 for pause control
+  // When this YouTube player activates, register its destroy callback
+  useEffect(() => {
+    if (!ytActive) return;
+    // Kill previous YouTube + pause all HTML5 media
+    if (activeYouTubeDestroy) activeYouTubeDestroy();
+    pauseAllMedia();
+    const destroy = () => setYtActive(false);
+    activeYouTubeDestroy = destroy;
+    return () => {
+      if (activeYouTubeDestroy === destroy) activeYouTubeDestroy = null;
+    };
+  }, [ytActive]);
+
+  // 1) YouTube — click thumbnail to load iframe (only one at a time)
   if (youtubeId) {
+    if (!ytActive) {
+      const thumbUrl = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
+      return (
+        <div className="mt-3 w-full max-w-md cursor-pointer group" onClick={() => setYtActive(true)}>
+          <div style={{ position: "relative", paddingBottom: "56.25%", height: 0 }}>
+            <img
+              src={thumbUrl}
+              alt="Video thumbnail"
+              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover", borderRadius: "0.5rem" }}
+            />
+            {/* Play button overlay */}
+            <div style={{
+              position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+              width: 68, height: 48, background: "rgba(0,0,0,0.7)", borderRadius: 12,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "background 0.2s",
+            }}
+            className="group-hover:bg-red-600"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          </div>
+          <div className="text-xs text-gray-500 mt-1">Click to play (starts at {formatTime(start)})</div>
+        </div>
+      );
+    }
+
     return (
       <div className="mt-3 w-full max-w-md">
         <div style={{ position: "relative", paddingBottom: "56.25%", height: 0 }}>
           <iframe
-            ref={iframeRef}
             style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: 0, borderRadius: "0.5rem" }}
-            src={`https://www.youtube.com/embed/${youtubeId}?start=${start}&enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`}
+            src={`https://www.youtube.com/embed/${youtubeId}?start=${start}&autoplay=1`}
             title="Video"
             frameBorder="0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -179,4 +170,12 @@ export default function VideoPlayer({
   }
 
   return null;
+}
+
+function formatTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
