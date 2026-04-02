@@ -1,0 +1,227 @@
+[
+  {
+    "id": "kw01",
+    "question": "Khamenei regime collapse",
+    "type": "keyword",
+    "expected_keywords": ["khamenei", "regime", "collapse", "fall", "overthrow"],
+    "min_keyword_hits": 5,
+    "expected_topics": "Discussion about the potential fall of Khamenei's regime",
+    "answer_should_mention": ["khamenei", "regime"]
+  },
+  {
+    "id": "kw02",
+    "question": "Trump Iran sanctions",
+    "type": "keyword",
+    "expected_keywords": ["trump", "sanctions", "pressure", "maximum"],
+    "min_keyword_hits": 4,
+    "expected_topics": "Trump administration's sanctions policy toward Iran",
+    "answer_should_mention": ["trump", "sanctions", "iran"]
+  },
+  {
+    "id": "kw03",
+    "question": "Netanyahu Israel Iran threat",
+    "type": "keyword",
+    "expected_keywords": ["netanyahu", "israel", "threat", "attack", "military"],
+    "min_keyword_hits": 3,
+    "expected_topics": "Netanyahu's stance on Iran and Israeli security concerns",
+    "answer_should_mention": ["israel", "iran"]
+  },
+  {
+    "id": "kw04",
+    "question": "nuclear weapons program",
+    "type": "keyword",
+    "expected_keywords": ["nuclear", "weapons", "enrichment", "uranium", "bomb", "atomic"],
+    "min_keyword_hits": 5,
+    "expected_topics": "Iran's nuclear program and weapons potential",
+    "answer_should_mention": ["nuclear", "iran"]
+  },
+  {
+    "id": "kw05",
+    "question": "sanctions impact on Iranian people",
+    "type": "keyword",
+    "expected_keywords": ["sanctions", "people", "economy", "suffering", "impact"],
+    "min_keyword_hits": 4,
+    "expected_topics": "How sanctions affect ordinary Iranians",
+    "answer_should_mention": ["sanctions", "people"]
+  },
+  {
+    "id": "kw06",
+    "question": "transition booklet plan",
+    "type": "keyword",
+    "expected_keywords": ["transition", "booklet", "plan", "roadmap", "blueprint"],
+    "min_keyword_hits": 3,
+    "expected_topics": "The transition booklet or plan for regime change in Iran",
+    "answer_should_mention": ["transition"]
+  },
+  {
+    "id": "kw07",
+    "question": "Munich security conference speech",
+    "type": "keyword",
+    "expected_keywords": ["munich", "conference", "security", "speech"],
+    "min_keyword_hits": 3,
+    "expected_topics": "Pahlavi's appearance or speech at Munich Security Conference",
+    "answer_should_mention": ["munich"]
+  },
+  {
+    "id": "kw08",
+    "question": "referendum free elections constitution",
+    "type": "keyword",
+    "expected_keywords": ["referendum", "election", "elections", "constitution", "vote", "constitutional"],
+    "min_keyword_hits": 5,
+    "expected_topics": "Calls for a national referendum or free elections in Iran",
+    "answer_should_mention": ["referendum"]
+  },
+  {
+    "id": "sem01",
+    "question": "What is the vision for Iran's future?",
+    "type": "semantic",
+    "expected_keywords": ["future", "vision", "democracy", "freedom", "secular", "modern"],
+    "min_keyword_hits": 3,
+    "expected_topics": "Pahlavi's vision for a democratic, secular, modern Iran",
+    "answer_should_mention": ["iran", "future"]
+  },
+  {
+    "id": "sem02",
+    "question": "How does Pahlavi view democracy and human rights?",
+    "type": "semantic",
+    "expected_keywords": ["democracy", "human rights", "rights", "freedom", "liberty", "democratic"],
+    "min_keyword_hits": 4,
+    "expected_topics": "Pahlavi's views on democratic governance and human rights",
+    "answer_should_mention": ["democracy", "rights"]
+  },
+  {
+    "id": "sem03",
+    "question": "What is the relationship between Iran and Israel?",
+    "type": "semantic",
+    "expected_keywords": ["israel", "iran", "peace", "relations", "diplomacy", "recognition"],
+    "min_keyword_hits": 4,
+    "expected_topics": "Iran-Israel relations and potential for normalization",
+    "answer_should_mention": ["iran", "israel"]
+  },
+  {
+    "id": "sem04",
+    "question": "How can the diaspora help the opposition movement?",
+    "type": "semantic",
+    "expected_keywords": ["diaspora", "opposition", "movement", "support", "abroad", "exile", "help"],
+    "min_keyword_hits": 3,
+    "expected_topics": "Role of Iranian diaspora in supporting opposition",
+    "answer_should_mention": ["diaspora"]
+  },
+  {
+    "id": "sem05",
+    "question": "What role should the military play during regime transition?",
+    "type": "semantic",
+    "expected_keywords": ["military", "army", "irgc", "transition", "security", "forces"],
+    "min_keyword_hits": 3,
+    "expected_topics": "Military's role during political transition in Iran",
+    "answer_should_mention": ["military"]
+  },
+  {
+    "id": "sem06",
+    "question": "How do young Iranians feel about the current government?",
+    "type": "semantic",
+    "expected_keywords": ["young", "youth", "generation", "protest", "students", "government"],
+    "min_keyword_hits": 3,
+    "expected_topics": "Iranian youth sentiment toward the Islamic Republic",
+    "answer_should_mention": ["young", "iran"]
+  },
+  {
+    "id": "sem07",
+    "question": "What economic policies would benefit Iran after regime change?",
+    "type": "semantic",
+    "expected_keywords": ["economy", "economic", "investment", "trade", "growth", "reform"],
+    "min_keyword_hits": 2,
+    "expected_topics": "Economic reform and development plans for a post-regime Iran",
+    "answer_should_mention": ["economic", "iran"]
+  },
+  {
+    "id": "sem08",
+    "question": "How does Pahlavi respond to accusations of being a monarchist?",
+    "type": "semantic",
+    "expected_keywords": ["monarchy", "monarchist", "king", "crown", "republic", "title"],
+    "min_keyword_hits": 2,
+    "expected_topics": "Pahlavi's position on monarchy vs republic and personal ambitions",
+    "answer_should_mention": ["monarchy"]
+  },
+  {
+    "id": "mix01",
+    "question": "What did Pahlavi say about Khamenei's successor?",
+    "type": "mixed",
+    "expected_keywords": ["khamenei", "successor", "leadership", "supreme leader", "mojtaba"],
+    "min_keyword_hits": 3,
+    "expected_topics": "Discussion about who might succeed Khamenei",
+    "answer_should_mention": ["khamenei", "successor"]
+  },
+  {
+    "id": "mix02",
+    "question": "nuclear deal implications for Iran's future",
+    "type": "mixed",
+    "expected_keywords": ["nuclear", "deal", "jcpoa", "agreement", "implications", "future"],
+    "min_keyword_hits": 4,
+    "expected_topics": "The JCPOA nuclear deal and its consequences for Iran",
+    "answer_should_mention": ["nuclear", "deal"]
+  },
+  {
+    "id": "mix03",
+    "question": "Pahlavi meeting with American senators Congress",
+    "type": "mixed",
+    "expected_keywords": ["congress", "senator", "senators", "meeting", "washington", "capitol", "american"],
+    "min_keyword_hits": 3,
+    "expected_topics": "Pahlavi's meetings with US Congress members",
+    "answer_should_mention": ["congress"]
+  },
+  {
+    "id": "mix04",
+    "question": "Woman Life Freedom movement and Mahsa Amini protests",
+    "type": "mixed",
+    "expected_keywords": ["woman", "life", "freedom", "mahsa", "amini", "protest", "protests"],
+    "min_keyword_hits": 4,
+    "expected_topics": "The Woman Life Freedom movement sparked by Mahsa Amini's death",
+    "answer_should_mention": ["woman", "freedom"]
+  },
+  {
+    "id": "mix05",
+    "question": "IRGC terrorism designation and proxy wars",
+    "type": "mixed",
+    "expected_keywords": ["irgc", "terrorism", "terrorist", "proxy", "hezbollah", "hamas"],
+    "min_keyword_hits": 3,
+    "expected_topics": "IRGC's designation as terrorist organization and proxy activities",
+    "answer_should_mention": ["irgc"]
+  },
+  {
+    "id": "edge01",
+    "question": "IRGC",
+    "type": "edge",
+    "expected_keywords": ["irgc", "revolutionary guard", "guards", "sepah"],
+    "min_keyword_hits": 5,
+    "expected_topics": "Any content mentioning the Islamic Revolutionary Guard Corps",
+    "answer_should_mention": ["irgc"]
+  },
+  {
+    "id": "edge02",
+    "question": "Zoroastrianism ancient Persia Cyrus the Great",
+    "type": "edge",
+    "expected_keywords": ["zoroastrian", "cyrus", "persia", "ancient", "persian"],
+    "min_keyword_hits": 1,
+    "expected_topics": "References to ancient Persian history and Zoroastrianism",
+    "answer_should_mention": ["persia"]
+  },
+  {
+    "id": "edge03",
+    "question": "cryptocurrency bitcoin blockchain Iran",
+    "type": "edge",
+    "expected_keywords": ["crypto", "bitcoin", "blockchain", "cryptocurrency"],
+    "min_keyword_hits": 0,
+    "expected_topics": "Unlikely topic - may not exist in corpus. Graceful handling expected.",
+    "answer_should_mention": []
+  },
+  {
+    "id": "edge04",
+    "question": "climate change environmental policy",
+    "type": "edge",
+    "expected_keywords": ["climate", "environment", "environmental", "water", "drought"],
+    "min_keyword_hits": 0,
+    "expected_topics": "Environmental issues in Iran - may have limited coverage",
+    "answer_should_mention": []
+  }
+]
