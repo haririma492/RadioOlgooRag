@@ -115,6 +115,8 @@ export default function VideoBlock({
             audioPrefix={audioPrefix}
             videoCode={videoCode}
             videoUrl={videoUrl}
+            videoTitle={title}
+            videoSpeakers={speakers}
           />
         ))}
       </div>

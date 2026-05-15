@@ -18,25 +18,35 @@ let activeYouTubeDestroy: (() => void) | null = null;
 
 /**
  * Unified video/audio player.
- * - YouTube: click-to-load (only one iframe at a time)
- * - MP4: HTML5 <video>
- * - Audio: HTML5 <audio>
- * All enforce single-player-at-a-time.
+ *
+ * Modes:
+ *  - YouTube iframe (default when a YouTube ID is available)
+ *  - HTML5 <video> (S3 mp4)
+ *  - HTML5 <audio> — used as fallback AND as an opt-in "Listen (background)" mode
+ *
+ * Why audio mode matters: YouTube iframes auto‑pause when the mobile browser is
+ * backgrounded (locked screen / app switch / tab switch). HTML5 <audio> keeps
+ * playing and integrates with the OS lock‑screen via the Media Session API.
  */
 export default function VideoPlayer({
   youtubeId,
   videoUrl,
   audioUrl,
   startSeconds,
+  mediaTitle,
+  mediaArtist,
 }: {
   youtubeId?: string | null;
   videoUrl?: string | null;
   audioUrl?: string | null;
   startSeconds: number;
+  mediaTitle?: string;
+  mediaArtist?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [ytActive, setYtActive] = useState(false);
+  const [audioMode, setAudioMode] = useState(false);
 
   const start = Math.max(0, Math.floor(startSeconds));
 
@@ -52,7 +62,6 @@ export default function VideoPlayer({
       } catch {}
     };
     const onPlay = () => {
-      // Destroy any active YouTube iframe
       if (activeYouTubeDestroy) { activeYouTubeDestroy(); activeYouTubeDestroy = null; }
       pauseAllMedia(el);
     };
@@ -66,7 +75,7 @@ export default function VideoPlayer({
     };
   }, [start, videoUrl]);
 
-  // HTML5 audio: seek + single-player
+  // HTML5 audio: seek + single-player + lock-screen metadata
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
@@ -77,9 +86,24 @@ export default function VideoPlayer({
         if (start > 0 && el.duration && start < el.duration) el.currentTime = start;
       } catch {}
     };
+
+    const setMediaSessionMetadata = () => {
+      if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+      try {
+        const ms: any = (navigator as any).mediaSession;
+        if (typeof MediaMetadata !== "undefined") {
+          ms.metadata = new MediaMetadata({
+            title: mediaTitle || "Radio Olgoo",
+            artist: mediaArtist || "Reza Pahlavi",
+          });
+        }
+      } catch {}
+    };
+
     const onPlay = () => {
       if (activeYouTubeDestroy) { activeYouTubeDestroy(); activeYouTubeDestroy = null; }
       pauseAllMedia(el);
+      setMediaSessionMetadata();
     };
 
     el.addEventListener("loadedmetadata", seek);
@@ -89,12 +113,11 @@ export default function VideoPlayer({
       el.removeEventListener("play", onPlay);
       activeMediaElements.delete(el);
     };
-  }, [start, audioUrl]);
+  }, [start, audioUrl, mediaTitle, mediaArtist]);
 
   // When this YouTube player activates, register its destroy callback
   useEffect(() => {
     if (!ytActive) return;
-    // Kill previous YouTube + pause all HTML5 media
     if (activeYouTubeDestroy) activeYouTubeDestroy();
     pauseAllMedia();
     const destroy = () => setYtActive(false);
@@ -104,33 +127,72 @@ export default function VideoPlayer({
     };
   }, [ytActive]);
 
+  // ---- "Listen (background)" mode swaps to HTML5 audio ----
+  if (audioMode && audioUrl) {
+    return (
+      <div className="mt-3 w-full max-w-md">
+        <audio ref={audioRef} controls preload="none" src={audioUrl} className="w-full" />
+        {(youtubeId || videoUrl) && (
+          <button
+            type="button"
+            onClick={() => setAudioMode(false)}
+            className="mt-2 text-xs text-blue-600 hover:underline"
+          >
+            ← Back to video
+          </button>
+        )}
+        <div className="text-xs text-gray-500 mt-1">
+          Audio mode — keeps playing when your screen locks or you switch apps.
+        </div>
+      </div>
+    );
+  }
+
   // 1) YouTube — click thumbnail to load iframe (only one at a time)
   if (youtubeId) {
+    const listenButton = audioUrl ? (
+      <button
+        type="button"
+        onClick={() => {
+          if (activeYouTubeDestroy) { activeYouTubeDestroy(); activeYouTubeDestroy = null; }
+          setYtActive(false);
+          pauseAllMedia();
+          setAudioMode(true);
+        }}
+        className="mt-2 text-xs text-blue-600 hover:underline"
+      >
+        Listen in background (mobile-friendly audio)
+      </button>
+    ) : null;
+
     if (!ytActive) {
       const thumbUrl = `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
       return (
-        <div className="mt-3 w-full max-w-md cursor-pointer group" onClick={() => setYtActive(true)}>
-          <div style={{ position: "relative", paddingBottom: "56.25%", height: 0 }}>
-            <img
-              src={thumbUrl}
-              alt="Video thumbnail"
-              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover", borderRadius: "0.5rem" }}
-            />
-            {/* Play button overlay */}
-            <div style={{
-              position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-              width: 68, height: 48, background: "rgba(0,0,0,0.7)", borderRadius: 12,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "background 0.2s",
-            }}
-            className="group-hover:bg-red-600"
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
-                <path d="M8 5v14l11-7z" />
-              </svg>
+        <div className="mt-3 w-full max-w-md">
+          <div className="cursor-pointer group" onClick={() => setYtActive(true)}>
+            <div style={{ position: "relative", paddingBottom: "56.25%", height: 0 }}>
+              <img
+                src={thumbUrl}
+                alt="Video thumbnail"
+                style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover", borderRadius: "0.5rem" }}
+              />
+              <div
+                style={{
+                  position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+                  width: 68, height: 48, background: "rgba(0,0,0,0.7)", borderRadius: 12,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "background 0.2s",
+                }}
+                className="group-hover:bg-red-600"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
             </div>
+            <div className="text-xs text-gray-500 mt-1">Click to play (starts at {formatTime(start)})</div>
           </div>
-          <div className="text-xs text-gray-500 mt-1">Click to play (starts at {formatTime(start)})</div>
+          {listenButton}
         </div>
       );
     }
@@ -147,6 +209,7 @@ export default function VideoPlayer({
             allowFullScreen
           />
         </div>
+        {listenButton}
       </div>
     );
   }
@@ -154,13 +217,24 @@ export default function VideoPlayer({
   // 2) Direct video URL (S3 mp4)
   if (videoUrl) {
     return (
-      <div className="mt-3 w-full max-w-md rounded-lg overflow-hidden shadow">
-        <video ref={videoRef} controls preload="none" src={videoUrl} className="w-full" />
+      <div className="mt-3 w-full max-w-md">
+        <div className="rounded-lg overflow-hidden shadow">
+          <video ref={videoRef} controls preload="none" src={videoUrl} className="w-full" />
+        </div>
+        {audioUrl && (
+          <button
+            type="button"
+            onClick={() => { pauseAllMedia(); setAudioMode(true); }}
+            className="mt-2 text-xs text-blue-600 hover:underline"
+          >
+            Listen in background (mobile-friendly audio)
+          </button>
+        )}
       </div>
     );
   }
 
-  // 3) Audio fallback
+  // 3) Audio fallback — HTML5 <audio> supports background play natively
   if (audioUrl) {
     return (
       <div className="mt-3">

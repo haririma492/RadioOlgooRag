@@ -21,10 +21,21 @@ export function safeVideoCodeFromDisplay(display: string): string | null {
 
 export const safePanelCodeFromDisplay = safeVideoCodeFromDisplay;
 
-export function audioUrlFromFileName(fileName: string, _s3BaseUrl: string, _audioPrefix: string): string {
-  // Serve from local API route: transcript .txt → .mp3
+export function audioUrlFromFileName(fileName: string, s3BaseUrl: string, audioPrefix: string): string {
   const mp3Name = fileName
     .replace(/(_transcript)?(\.txt)?$/i, "")
     .replace(/_transcript/i, "") + ".mp3";
+
+  // Prefer S3 when the search API tells us where it lives — this URL must work
+  // on Vercel, where the local /api/audio route has no filesystem access.
+  if (s3BaseUrl) {
+    const base = s3BaseUrl.replace(/\/+$/, "");
+    const prefix = (audioPrefix || "").replace(/^\/+|\/+$/g, "");
+    return prefix
+      ? `${base}/${prefix}/${encodeURIComponent(mp3Name)}`
+      : `${base}/${encodeURIComponent(mp3Name)}`;
+  }
+
+  // Local dev fallback
   return `/api/audio?file=${encodeURIComponent(mp3Name)}`;
 }

@@ -35,12 +35,16 @@ export default function ChunkCard({
   audioPrefix,
   videoCode,
   videoUrl,
+  videoTitle,
+  videoSpeakers,
 }: {
   chunk: ChunkRow;
   s3BaseUrl: string;
   audioPrefix: string;
   videoCode?: string;
   videoUrl?: string;
+  videoTitle?: string;
+  videoSpeakers?: string;
 }) {
   const timeStr = chunk.chunk_start_time || "—";
   const spk = chunk.chunk_speakers || "—";
@@ -52,7 +56,9 @@ export default function ChunkCard({
   const ytId = extractYouTubeId(videoCode || chunk.video_code, videoUrl);
   const directVideo = !ytId && isDirectVideoUrl(videoUrl) ? videoUrl : null;
 
-  // Audio fallback for non-video content
+  // Always compute an audio URL when we have a file name — it powers both the
+  // audio fallback AND the "Listen in background" mode that lives alongside
+  // the YouTube/video player on mobile.
   const fileName = chunk.file_name;
   const audioUrl = fileName ? audioUrlFromFileName(String(fileName), s3BaseUrl, audioPrefix) : null;
 
@@ -65,8 +71,10 @@ export default function ChunkCard({
       <VideoPlayer
         youtubeId={ytId}
         videoUrl={directVideo}
-        audioUrl={!ytId && !directVideo ? audioUrl : null}
+        audioUrl={audioUrl}
         startSeconds={startSeconds}
+        mediaTitle={videoTitle}
+        mediaArtist={videoSpeakers || (spk !== "—" ? spk : undefined)}
       />
     </div>
   );
